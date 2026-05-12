@@ -12,7 +12,7 @@ and is pinned from the org so contributors can find it easily.
 
 It collects three things:
 
-1. **How to write a module** — [`HOWTO-create-module.md`](./HOWTO-create-module.md)
+1. **How to write a module** — [`modules-howto.md`](./modules-howto.md)
 2. **Sample input files** for every stage — [`samples/`](./samples/)
    so you can run your module in isolation, without re-running the full benchmark.
 3. **Conventions** for entrypoints, parameters, outputs, and (eventually) validators.
