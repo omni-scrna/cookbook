@@ -47,7 +47,7 @@ if __name__ == "__main__":
     main()
 ```
 
-## 3. `omnibenchmark.yaml`
+## 3. Module metadata: per repo `omnibenchmark.yaml`
 
 Maps an entrypoint **name** to a shell command:
 
