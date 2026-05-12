@@ -1,0 +1,3 @@
+# one-data .h5ad files are too bulky to commit (~1 GB).
+# Regenerate locally with `pixi run samples` after running the benchmark.
+samples/one-data/*.h5ad

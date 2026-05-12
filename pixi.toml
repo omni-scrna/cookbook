@@ -1,0 +1,19 @@
+[project]
+name = "cookbook"
+description = "Recipes and samples for the omni-scrna benchmark"
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-arm64", "osx-64"]
+
+[dependencies]
+python = ">=3.11"
+pyyaml = "*"
+
+[tasks]
+# Refresh samples from the sibling benchmark repo's `out/` tree, then
+# regenerate the samples index with per-sample git provenance.
+# Expects ../split-stages-plan to be checked out alongside this repo with
+# a fresh `out/` from `ob run`.
+samples = { cmd = """
+  bash scripts/collect-samples.sh ../split-stages-plan/out samples \
+  && python scripts/build-modules-table.py ../split-stages-plan --samples-dir samples
+""" }

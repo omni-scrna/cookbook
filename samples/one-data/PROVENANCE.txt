@@ -1,0 +1,3 @@
+*.h5ad <- ../../split-stages-plan/out/one-data/datasets/.6fbd9e19/datasets.h5ad
+*.clusters_truth.tsv <- ../../split-stages-plan/out/one-data/datasets/.6fbd9e19/datasets.clusters_truth.tsv
+*.clusters_truth_num.txt <- ../../split-stages-plan/out/one-data/datasets/.6fbd9e19/datasets.clusters_truth_num.txt
