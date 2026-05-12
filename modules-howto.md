@@ -1,102 +1,156 @@
 # HOWTO: create a module
 
-A module is a small Git repo that implements **one entrypoint** of **one stage**.
-The benchmark pins a specific commit of your module via `repository.url` +
-`repository.commit` in `benchmark_conda.yaml`.
+A **module** is a small Git repo that exposes one **entrypoint** — a script
+that implements one stage of the benchmark. The benchmark pins your module
+in `benchmark_conda.yaml` via `repository.url`, `repository.commit`, and
+`repository.entrypoint`.
 
-## 1. Scaffold with `ob create module`
+Start with **one entrypoint per module**. Bundling several into one repo is
+useful only when they genuinely share code (see [Module shapes](#module-shapes)).
+
+## 1. Scaffold
 
 ```bash
 pip install omnibenchmark
-ob create module --stage <stage-id> --template <template>
+ob create module --stage <stage-id>
 ```
 
-Pick a template that matches how you're packaging the work:
-
-### tool-based (recommended when the tool is the unit of comparison)
-
-Use when contributors want to benchmark **different functions of the same tool**
-side-by-side. The module exposes one entrypoint per method, dispatched by
-parameter.
+## 2. Basic layout
 
 ```
-my-scanpy-module/
-├── run.py            # dispatcher: reads $parameter, calls the right fn
-├── methods/
-│   ├── pca.py
-│   ├── nmf.py
-│   └── ...
-├── env.yml
+my-pca/
+├── omnibenchmark.yaml      # entrypoints: { pca: pca.py }
+├── pca.py                  # argparse → src.run_pca → write
+├── src/                    # functions imported by pca.py and tests/
+├── tests/                  # pytest, imports from src/
+├── envs/my-pca.yml         # auto-exported from pixi (consumed by the benchmark)
+├── pixi.toml               # deps + tasks
 └── README.md
 ```
 
-Benchmark side:
-```yaml
-parameters:
-  - method: ["pca", "nmf"]
+**Rule:** keep `pca.py` thin — argparse and glue. Real logic goes in `src/`
+so `tests/` can import it directly.
+
+```python
+# pca.py
+import sys; from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent / "src"))
+from cli import build_pca_parser     # noqa: E402
+from schemas import Embedding        # noqa: E402
+
+def main() -> None:
+    args = build_pca_parser().parse_args()
+    emb = run_pca(args)              # defined in src/
+    emb.write(Path(args.output_dir) / f"{args.name}_pcas.tsv")
+
+if __name__ == "__main__":
+    main()
 ```
 
-Used today by: `pca-scanpy`, `pca-scrapper`.
+## 3. `omnibenchmark.yaml`
 
-### language-based (when the tool varies but the language doesn't)
+Maps an entrypoint **name** to a shell command:
 
-Use when several R (or Python) tools implement the same step and you want one
-conda env to cover them all. One module, one language, many tools.
+```yaml
+entrypoints:
+  pca: pca.py
+```
+
+The benchmark side picks it with `repository.entrypoint: pca`.
+
+If your module has a single usage, use `entrypoints: default: pca.py`.
+
+Entrypoints are preferred over dispatching on module arguments.
+
+## 4. CLI contract
+
+The benchmark invokes your script with:
+
+- `--<input-id> <path>` per stage input,
+- `--<param-name> <value>` per parameter,
+- `--output_dir <dir>` and `--name <id>`.
+
+Write outputs into `--output_dir`, named exactly as the stage's `path`
+template declares (e.g. `{name}_pcas.tsv`). Flag names with dots like
+`--pcas.tsv` are valid — use `dest=` in argparse.
+
+## 5. Test against a sample
+
+The cookbook ships one real input per stage. You can [use those samples](https://github.com/btraven00/cookbook/blob/main/samples/INDEX.md) to quickly test your modules if you dont' want to run the full benchmark:
+
+```bash
+git clone https://github.com/omni-scrna/cookbook.git ../cookbook
+
+python pca.py \
+  --normalized_selected.h5 ../cookbook/samples/four-select/datasets_normalized_selected.h5 \
+  --solver arpack --n_components 50 --random_seed 42 \
+  --output_dir /tmp/myrun --name datasets
+```
+
+If `/tmp/myrun/datasets_pcas.tsv` appears, you're done (well, assuming your module works as intended). See
+[`samples/INDEX.md`](./samples/INDEX.md) for what each sample is.
+
+## 6. Open a PR
+
+Bump `commit:` (or pin a branch/tag) in `benchmark_conda.yaml` and set
+`entrypoint:` to your declared name if your module uses entrypoints.
+
+---
+
+## Pixi workflow
+
+`pixi.toml` is the source of truth for deps. The benchmark consumes
+`envs/<module>.yml` instead — keep it auto-generated:
+
+```toml
+[tasks]
+test       = "pytest"
+lint       = "ruff check ."
+typecheck  = "ty check"
+export-env = "pixi workspace export conda-environment ... envs/my-pca.yml"
+```
+
+Run `pixi run export-env` whenever deps change. Don't hand-write the conda yaml.
+
+## Module shapes
+
+### Single-tool (recommended)
+
+One module, one entrypoint, one pixi environment, one tool. The example above. Used today by
+`pca-scrapper`, `filtering-r`, the four R modules.
+
+### Stage-language (e.g. `filtering-r`, `pca-python`)
+
+When several tools share **one language and one conda env**, you can dispatch by
+parameter inside a single entrypoint:
+
+```yaml
+# benchmark side
+parameters:
+  - method: ["manual", "scrapper_auto"]
+```
 
 ```
 filtering-r/
-├── run.R
-├── methods/
-│   ├── manual.R
-│   └── scrapper_auto.R
-└── env.yml
+├── omnibenchmark.yaml      # entrypoints: { filter: run.R }
+├── run.R                   # dispatches on args$method
+├── src/{manual.R, scrapper_auto.R}
+└── envs/filtering-r.yml
 ```
 
-Used today by: `filtering-r`, `normalization-r`, `selection-r`.
+### Multi-entrypoint (advanced)
 
-### single-method (smallest, easiest to review)
+One module exposes **multiple entrypoints sharing `src/`**. Only worth it
+when several stage entrypoints reuse the same schemas, IO, and env. The
+`scanpy` module does this for `pca`, `knn`, `cluster`:
 
-One module = one method. No dispatcher. Best for first-time contributors and
-for methods with awkward dependencies that don't co-install cleanly with others.
-
-```
-my-method/
-├── run.py
-└── env.yml
-```
-
-> **Rule of thumb:** start with **single-method**. Promote to tool-based or
-> language-based only once you have 2+ siblings that genuinely share an env.
-
-## 2. Entrypoint contract
-
-Every module's entrypoint receives, via CLI flags injected by omnibenchmark:
-
-- `--input <key>=<path>` for each declared input
-- `--output <key>=<path>` for each declared output
-- `--<param-name> <value>` for each parameter
-
-Write outputs to the exact paths given. Do not invent filenames.
-
-## 3. Test locally against a sample
-
-```bash
-# from your module repo
-git clone https://github.com/omni-scrna/contributing.git ../contributing
-
-python run.py \
-  --input rawdata.h5ad=../contributing/samples/one-data/datasets.h5ad \
-  --output filtered.cellids=/tmp/out_cellids.txt.gz \
-  --filter_type manual
+```yaml
+entrypoints:
+  pca: pca.py
+  knn: knn.py
+  cluster: cluster.py
+  pca-prof: denet pca.py     # values are shell commands — prefix wrappers freely
 ```
 
-If you produce a file at the declared `path`, you're done. Open a PR.
-
-## 4. (Optional) run the validator
-
-```bash
-pixi run -- python ../split-stages-plan/validators/<stage>/<output_name>.py /tmp/out_cellids.txt.gz
-```
-
-Validators today are ad-hoc per stage. See
-[validators/README.md](https://github.com/omni-scrna/split-stages-plan/tree/main/validators).
+Pick this only when splitting into three repos would force you to vendor or
+duplicate shared code, or when you know that a single tool covers multiple stages. The idea is that these modules will outlive the benchmark, and will be useful in many other contexts. But **don't start here.**
