@@ -5,7 +5,7 @@
 # Contributing to the scRNA-seq benchmark
 
 > **Status:** experimental. We are drafting "good practices" bottom-up. Expect this
-> document to change as we learn what flow works. Or send a PR if you want to improve it!
+> document to change as we learn what flow works. Or [send a PR](https://github.com/omni-scrna/cookbook/pulls) if you want to improve it!
 
 This repo is a sibling of [`split-stages-plan`](https://github.com/omni-scrna/split-stages-plan)
 and is pinned from the org so contributors can find it easily.
